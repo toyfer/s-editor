@@ -1,0 +1,198 @@
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::raw::IntoRawMode;
+
+fn main() {
+    // コマンドライン引数を取得
+    let args: Vec<String> = env::args().collect();
+    // 引数の1番目の要素をファイル名として取得
+    let filename = args.get(1).map_or("", String::as_str);
+
+    // ファイルの内容を格納する変数
+    let mut contents = String::new();
+    // ファイル名が指定されている場合は、ファイルを読み込む
+    if !filename.is_empty() {
+        contents = fs::read_to_string(filename).expect("Unable to read file");
+    }
+
+    // 標準入力のハンドルを取得
+    let stdin = io::stdin();
+    // 標準出力のハンドルを取得し、rawモードに設定する
+    let mut stdout = io::stdout().into_raw_mode().unwrap();
+
+    // カーソルの位置を管理する変数
+    let mut cursor_x = 1;
+    let mut cursor_y = 1;
+    // テキストの行ごとの内容を管理するベクター
+    let mut lines = contents.lines().map(|s| s.to_string()).collect::<Vec<String>>();
+    // 変更があったかどうかを管理するフラグ
+    let mut dirty = false;
+
+    // 画面をクリアする
+    write!(stdout, "{}", termion::clear::All).unwrap();
+
+    // テキストの各行を画面に表示する
+    for line in &lines {
+        write!(stdout, "{}{}\r\n", line, termion::cursor::Down(1)).unwrap();
+    }
+
+    // カーソルを初期位置に移動する
+    write!(stdout, "{}", termion::cursor::Goto(1, 1)).unwrap();
+    stdout.flush().unwrap();
+
+    // キーボードからの入力を処理するループ
+    for c in stdin.keys() {
+        match c.unwrap() {
+            Key::Char('\n') => {
+                // 改行キーが押された場合
+                // カーソル位置の行を取得し、カーソルより左と右に分割する
+                let line = lines.get_mut(cursor_y - 1).unwrap().clone();
+                let (left, right) = line.split_at(cursor_x - 1);
+                // カーソル位置の行を左側だけに更新し、新しい行を挿入する
+                lines[cursor_y - 1] = String::from(left);
+                lines.insert(cursor_y, String::from(right));
+                // カーソル位置を更新し、変更フラグを立てる
+                cursor_y += 1;
+                cursor_x = 1;
+                dirty = true;
+            }
+            Key::Char(c) => {
+                // 文字キーが押された場合
+                // カーソル位置の行に文字を挿入し、カーソル位置を更新する
+                let line = lines.get_mut(cursor_y - 1).unwrap();
+                line.insert(cursor_x - 1, c);
+                cursor_x += 1;
+                dirty = true;
+            }
+            Key::Backspace => {
+                // バックスペースキーが押された場合
+                if cursor_x > 1 {
+                    // カーソル位置が行の先頭でない場合は、カーソルの左にある文字を削除し、カーソル位置を更新する
+                    let line = lines.get_mut(cursor_y - 1).unwrap();
+                    line.remove(cursor_x - 2);
+                    cursor_x -= 1;
+                    dirty = true;
+                } else if cursor_y > 1 {
+                    // カーソル位置が行の先頭であり、かつ行が先頭行でない場合は、現在の行と前の行を結合し、カーソル位置を更新する
+                    let current_line = lines.remove(cursor_y - 1);
+                    let prev_line = lines.get_mut(cursor_y - 2).unwrap();
+                    *prev_line = format!("{}{}", prev_line, current_line);
+                    cursor_y -= 1;
+                    cursor_x = prev_line.len() + 1;
+                    dirty = true;
+                }
+            }
+            Key::Left => {
+                // 左キーが押された場合
+                if cursor_x > 1 {
+                    // カーソル位置が行の先頭でない場合は、カーソルを左に移動する
+                    cursor_x -= 1;
+                    write!(stdout, "{}", termion::cursor::Left(1)).unwrap();
+                }
+            }
+            Key::Right => {
+                // 右キーが押された場合
+                let line_len = lines[cursor_y - 1].len();
+                if cursor_x <= line_len {
+                    // カーソル位置が行の最後でない場合は、カーソルを右に移動する
+                    cursor_x += 1;
+                    write!(stdout, "{}", termion::cursor::Right(1)).unwrap();
+                }
+            }
+            Key::Up => {
+                // 上キーが押された場合
+                if cursor_y > 1 {
+                    // カーソル位置が先頭行でない場合は、カーソルを上に移動する
+                    cursor_y -= 1;
+                    let line = &lines[cursor_y - 1];
+                    if cursor_x > line.len() + 1 {
+                        cursor_x = line.len() + 1;
+                    }
+                    write!(stdout, "{}", termion::cursor::Up(1)).unwrap();
+                }
+            }
+            Key::Down => {
+                // 下キーが押された場合
+                if cursor_y < lines.len() {
+                    // カーソル位置が最終行でない場合は、カーソルを下に移動する
+                    cursor_y += 1;
+                    let line = &lines[cursor_y - 1];
+                    if cursor_x > line.len() + 1 {
+                        cursor_x = line.len() + 1;
+                    }
+                    write!(stdout, "{}", termion::cursor::Down(1)).unwrap();
+                }
+            }
+            Key::Ctrl('s') => {
+                // Ctrl + Sキーが押された場合
+                if dirty {
+                    // 変更がある場合のみ処理する
+                    let mut f = if filename.is_empty() {
+                        // ファイル名が指定されていない場合は、新しいファイル名を入力する
+                        let mut filename = String::new();
+                        print!("Enter filename: ");
+                        io::stdout().flush().unwrap();
+                        io::stdin().read_line(&mut filename).unwrap();
+                        let filename = filename.trim();
+                        fs::File::create(filename).expect("Unable to create file")
+                    } else {
+                        // ファイル名が指定されている場合は、既存のファイルを上書きする
+                        fs::File::create(filename).expect("Unable to create file")
+                    };
+
+                    // 変更内容をファイルに書き込む
+                    for line in &lines {
+                        writeln!(f, "{}", line).expect("Unable to write to file");
+                    }
+
+                    // 変更フラグをリセットする
+                    dirty = false;
+                }
+            }
+            Key::Ctrl('q') => {
+                // Ctrl + Qキーが押された場合
+                if dirty {
+                    // 変更がある場合のみ処理する
+                    let mut input = String::new();
+                    print!("File has unsaved changes. Do you want to save before quitting? (y/n): ");
+                    io::stdout().flush().unwrap();
+                    io::stdin().read_line(&mut input).unwrap();
+                    let input = input.trim().to_lowercase();
+                    if input == "y" || input == "yes" {
+                        let mut f = if filename.is_empty() {
+                            // ファイル名が指定されていない場合は、新しいファイル名を入力する
+                            let mut filename = String::new();
+                            print!("Enter filename: ");
+                            io::stdout().flush().unwrap();
+                            io::stdin().read_line(&mut filename).unwrap();
+                            let filename = filename.trim();
+                            fs::File::create(filename).expect("Unable to create file")
+                        } else {
+                            // ファイル名が指定されている場合は、既存のファイルを上書きする
+                            fs::File::create(filename).expect("Unable to create file")
+                        };
+
+                        // 変更内容をファイルに書き込む
+                        for line in &lines {
+                            writeln!(f, "{}", line).expect("Unable to write to file");
+                        }
+                    }
+                }
+                break;
+            }
+            _ => {}
+        }
+
+        // カーソルを現在の位置に移動し、画面を更新する
+        write!(
+            stdout,
+            "{}",
+            termion::cursor::Goto(cursor_x as u16, cursor_y as u16)
+        )
+        .unwrap();
+        stdout.flush().unwrap();
+    }
+}
