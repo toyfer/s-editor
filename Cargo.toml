@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 termion = "2.0.1"
 
-[bin]
+[[bin]]
 name = "s-editor"
 path = "src/main.rs"
 
