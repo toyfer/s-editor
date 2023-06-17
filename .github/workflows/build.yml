@@ -25,13 +25,6 @@ jobs:
             name: precious-Windows-x86_64.zip
             command: both
 
-          - release_for: macOS-x86_64
-            os: macOS-latest
-            target: x86_64-apple-darwin
-            bin: precious
-            name: precious-Darwin-x86_64.tar.gz
-            command: both
-
             # more release targets here ...
 
     runs-on: ${{ matrix.platform.os }}
