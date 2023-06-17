@@ -34,27 +34,24 @@ fn main() {
     for c in stdin.keys() {
         match c.unwrap() {
             Key::Char('\n') => {
-                let line = lines.get_mut(cursor_y - 1).unwrap();
-                let (left, right) = line.split_at_mut(cursor_x - 1);
-                *line = format!("{}{}\r", left, right);
-                lines.insert(cursor_y, String::from(&line[cursor_x - 1..]));
-                *line = String::from(&line[..cursor_x - 1]);
+                let line = lines.get_mut(cursor_y - 1).unwrap().clone();
+                let (left, right) = line.split_at(cursor_x - 1);
+                lines[cursor_y - 1] = String::from(left);
+                lines.insert(cursor_y, String::from(right));
                 cursor_y += 1;
                 cursor_x = 1;
                 dirty = true;
             }
             Key::Char(c) => {
                 let line = lines.get_mut(cursor_y - 1).unwrap();
-                let (left, right) = line.split_at_mut(cursor_x - 1);
-                *line = format!("{}{}{}{}", left, c, right, termion::cursor::Right(1));
+                line.insert(cursor_x - 1, c);
                 cursor_x += 1;
                 dirty = true;
             }
             Key::Backspace => {
                 if cursor_x > 1 {
                     let line = lines.get_mut(cursor_y - 1).unwrap();
-                    let (left, right) = line.split_at_mut(cursor_x - 2);
-                    *line = format!("{}{}", left, &right[1..]);
+                    line.remove(cursor_x - 2);
                     cursor_x -= 1;
                     dirty = true;
                 } else if cursor_y > 1 {
@@ -73,7 +70,8 @@ fn main() {
                 }
             }
             Key::Right => {
-                if cursor_x <= lines[cursor_y - 1].len() {
+                let line_len = lines[cursor_y - 1].len();
+                if cursor_x <= line_len {
                     cursor_x += 1;
                     write!(stdout, "{}", termion::cursor::Right(1)).unwrap();
                 }
