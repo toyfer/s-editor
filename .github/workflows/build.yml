@@ -28,6 +28,10 @@ jobs:
         with:
           name: release
           path: ./target/release/
+          
+      - name: Set artifact path
+        id: artifact
+        run: echo "::set-output name=artifact_path::./target/release/"
 
   release:
     name: Release
@@ -59,5 +63,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/
-
+          asset_path: ${{ needs.build.outputs.artifact_path }}
